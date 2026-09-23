@@ -1,30 +1,22 @@
 import logging
+import time
 from typing import List, Dict, Any, Optional
 
 import pandas as pd
 import yfinance as yf
 
-# Configuração de logs
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logger = logging.getLogger(__name__)
+RETRY_DELAYS_SECONDS = (0.5, 1.0)
 
 def _to_percent(value: Any) -> Optional[float]:
-    """Converte valor para percentual com 2 casas. Trata escala inconsistente do yfinance."""
+    """Converte a fração decimal usada pelo yfinance para percentual."""
     if value is None:
         return None
     try:
         val = float(value)
-        # Se o valor já parecer percentual (> 1.5), não multiplica por 100
-        if val > 1.5:
-            return round(val, 2)
         return round(val * 100, 2)
     except (TypeError, ValueError):
         return None
-    
-    
-
 
 def fetch_multiple_tickers(tickers: List[str]) -> pd.DataFrame:
     """
@@ -38,13 +30,37 @@ def fetch_multiple_tickers(tickers: List[str]) -> pd.DataFrame:
         DataFrame com os dados consolidados
     """
     data_list: List[Dict[str, Any]] = []
-    logging.info(f"Iniciando coleta para {len(tickers)} ativos: {tickers}")
+    logger.info("Iniciando coleta para %d ativos: %s", len(tickers), tickers)
 
     for symbol in tickers:
-        try:
-            ticker = yf.Ticker(symbol)
-            info = ticker.info
+        info = None
+        last_error: Optional[Exception] = None
+        for attempt in range(len(RETRY_DELAYS_SECONDS) + 1):
+            try:
+                info = yf.Ticker(symbol).info
+                break
+            except Exception as e:
+                last_error = e
+                if attempt < len(RETRY_DELAYS_SECONDS):
+                    delay = RETRY_DELAYS_SECONDS[attempt]
+                    logger.warning(
+                        "Falha temporária ao consultar %s; nova tentativa em %.1fs",
+                        symbol,
+                        delay,
+                    )
+                    time.sleep(delay)
 
+        if info is None:
+            error_message = str(last_error or "resposta vazia da fonte")
+            logger.error("Falha ao processar o ticker %s: %s", symbol, error_message)
+            data_list.append({
+                "Ticker": symbol.replace(".SA", ""),
+                "Status_Coleta": "erro",
+                "Erro_Coleta": error_message,
+            })
+            continue
+
+        try:
             ticker_data = {
                 "Ticker": symbol.replace(".SA", ""),
                 "Nome": info.get("shortName") or info.get("longName") or "N/A",
@@ -56,16 +72,24 @@ def fetch_multiple_tickers(tickers: List[str]) -> pd.DataFrame:
                 "ROE_%": _to_percent(info.get("returnOnEquity")),
                 "Margem_Liquida_%": _to_percent(info.get("profitMargins")),
                 "Market_Cap": info.get("marketCap"),
+                "Fluxo_Caixa_Livre": info.get("freeCashflow"),
+                "Acoes_Em_Circulacao": info.get("sharesOutstanding"),
+                "Status_Coleta": "ok",
+                "Erro_Coleta": None,
             }
 
             data_list.append(ticker_data)
-            logging.info(f"✔ Dados coletados com sucesso: {symbol}")
-
-        except Exception as e:
-            logging.error(f"❌ Falha ao processar o ticker {symbol}: {str(e)}")
+            logger.info("Dados coletados com sucesso: %s", symbol)
+        except (AttributeError, TypeError, ValueError) as e:
+            logger.error("Dados inválidos para o ticker %s: %s", symbol, e)
+            data_list.append({
+                "Ticker": symbol.replace(".SA", ""),
+                "Status_Coleta": "erro",
+                "Erro_Coleta": str(e),
+            })
 
     if not data_list:
-        logging.warning("Nenhum dado foi coletado com sucesso.")
+        logger.warning("Nenhum dado foi coletado.")
         return pd.DataFrame()
 
     df = pd.DataFrame(data_list)

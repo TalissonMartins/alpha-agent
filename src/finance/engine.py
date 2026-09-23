@@ -4,10 +4,12 @@ import numpy as np
 import pandas as pd
 
 logger = logging.getLogger("AlphaAgent-Engine")
+REQUIRED_COLUMNS = {"Preco_Atual", "PL", "PVP", "Dividend_Yield_%"}
 
 # Premissas institucionais (podem ser parametrizadas depois)
 TAXA_DESCONTO_K = 0.12          # 12% a.a. (custo de capital / retorno exigido)
 CRESCIMENTO_G = 0.04            # 4% a.a. (crescimento perpétuo conservador)
+ANOS_PROJECAO_DCF = 5
 
 
 def _safe_div(a, b) -> Optional[float]:
@@ -80,6 +82,47 @@ def _calc_earnings_yield(pl) -> Optional[float]:
         return None
 
 
+def _calc_dcf(
+    fluxo_caixa_livre,
+    acoes_em_circulacao,
+    taxa_desconto: float = TAXA_DESCONTO_K,
+    crescimento: float = CRESCIMENTO_G,
+    anos_projecao: int = ANOS_PROJECAO_DCF,
+) -> Optional[float]:
+    """
+    Calcula um DCF simplificado por ação.
+
+    O fluxo de caixa livre recebido é tratado como fluxo total anual e o
+    resultado é dividido pela quantidade de ações. Não há ajuste de dívida,
+    caixa ou opções; o resultado é uma estimativa de valor por ação.
+    """
+    try:
+        fcf = float(fluxo_caixa_livre)
+        shares = float(acoes_em_circulacao)
+        discount = float(taxa_desconto)
+        growth = float(crescimento)
+        years = int(anos_projecao)
+    except (TypeError, ValueError):
+        return None
+
+    values = (fcf, shares, discount, growth)
+    if not all(np.isfinite(value) for value in values):
+        return None
+    if fcf <= 0 or shares <= 0 or discount <= growth or years <= 0:
+        return None
+
+    present_value = 0.0
+    for year in range(1, years + 1):
+        projected_fcf = fcf * (1 + growth) ** year
+        present_value += projected_fcf / (1 + discount) ** year
+
+    terminal_fcf = fcf * (1 + growth) ** years
+    terminal_value = terminal_fcf * (1 + growth) / (discount - growth)
+    present_value += terminal_value / (1 + discount) ** years
+
+    return round(present_value / shares, 2)
+
+
 def calculate_valuation(df: pd.DataFrame) -> pd.DataFrame:
     """
     Enriquece o DataFrame com indicadores de valuation da Fase 2.
@@ -88,6 +131,11 @@ def calculate_valuation(df: pd.DataFrame) -> pd.DataFrame:
         logger.warning("DataFrame vazio recebido pelo motor financeiro.")
         return df.copy()
 
+    missing_columns = REQUIRED_COLUMNS.difference(df.columns)
+    if missing_columns:
+        missing = ", ".join(sorted(missing_columns))
+        raise ValueError(f"DataFrame sem colunas obrigatórias: {missing}")
+
     df_enriquecido = df.copy()
 
     graham_list = []
@@ -95,12 +143,16 @@ def calculate_valuation(df: pd.DataFrame) -> pd.DataFrame:
     gordon_list = []
     margem_gordon_list = []
     earnings_yield_list = []
+    dcf_list = []
+    margem_dcf_list = []
 
     for _, row in df_enriquecido.iterrows():
         preco = row.get("Preco_Atual")
         pl = row.get("PL")
         pvp = row.get("PVP")
         dy = row.get("Dividend_Yield_%")
+        fcf = row.get("Fluxo_Caixa_Livre")
+        shares = row.get("Acoes_Em_Circulacao")
 
         # Graham
         graham = _calc_graham(preco, pl, pvp)
@@ -113,17 +165,25 @@ def calculate_valuation(df: pd.DataFrame) -> pd.DataFrame:
         # Earnings Yield
         ey = _calc_earnings_yield(pl)
 
+        # DCF simplificado
+        dcf = _calc_dcf(fcf, shares)
+        margem_dcf = _calc_margem_seguranca(preco, dcf)
+
         graham_list.append(graham)
         margem_graham_list.append(margem_graham)
         gordon_list.append(gordon)
         margem_gordon_list.append(margem_gordon)
         earnings_yield_list.append(ey)
+        dcf_list.append(dcf)
+        margem_dcf_list.append(margem_dcf)
 
     df_enriquecido["Preco_Justo_Graham"] = graham_list
     df_enriquecido["Margem_Graham_%"] = margem_graham_list
     df_enriquecido["Preco_Justo_Gordon"] = gordon_list
     df_enriquecido["Margem_Gordon_%"] = margem_gordon_list
     df_enriquecido["Earnings_Yield_%"] = earnings_yield_list
+    df_enriquecido["Preco_Justo_DCF"] = dcf_list
+    df_enriquecido["Margem_DCF_%"] = margem_dcf_list
 
     logger.info("Motor financeiro (Graham + Gordon + Earnings Yield) executado com sucesso.")
     return df_enriquecido

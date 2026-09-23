@@ -1,21 +1,30 @@
-# Security Policy
+# Política de segurança
 
-## Supported Versions
+## Escopo
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+Este projeto está em desenvolvimento inicial. No momento, a versão mantida é
+a versão disponível na branch principal:
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+| Versão | Suporte |
+| --- | --- |
+| Branch principal | Correções de segurança |
+| Outras branches e versões | Sem garantia de suporte |
 
-## Reporting a Vulnerability
+## Como reportar uma vulnerabilidade
 
-Use this section to tell people how to report a vulnerability.
+Não publique credenciais, tokens ou detalhes exploráveis em issues públicas.
+Use o recurso **Private vulnerability reporting** do GitHub deste repositório,
+quando disponível. Caso ele não esteja habilitado, abra uma issue pública
+somente com uma descrição não sensível solicitando um canal privado.
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+Inclua, quando possível:
+
+- passos para reproduzir o problema;
+- impacto esperado;
+- versão, commit ou ambiente afetado;
+- uma sugestão de correção, se houver.
+
+As notificações serão analisadas assim que possível. O projeto pode solicitar
+informações adicionais, confirmar a correção e publicar um aviso após a
+disponibilização de uma solução. Não há SLA formal de resposta enquanto o
+projeto permanecer em fase de MVP.

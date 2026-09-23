@@ -1,6 +1,10 @@
 import logging
-from data.data_fetcher import fetch_multiple_tickers
-from finance.engine import calculate_valuation
+
+from .data.data_fetcher import fetch_multiple_tickers
+from .config import get_database_url, should_persist_database
+from .db.database import create_schema, create_session_factory
+from .db.repository import save_valuation_dataframe
+from .finance.engine import calculate_valuation
 
 # Configuração de logs centralizada
 logging.basicConfig(
@@ -34,6 +38,18 @@ def main() -> None:
     except Exception as e:
         logger.error(f"Falha no cálculo do motor financeiro: {e}")
         return
+
+    if should_persist_database():
+        try:
+            database_url = get_database_url()
+            create_schema(database_url)
+            session_factory = create_session_factory(database_url)
+            with session_factory() as session:
+                saved = save_valuation_dataframe(session, df_final)
+            logger.info("Persistidos %d snapshots no banco de dados.", saved)
+        except Exception as e:
+            logger.error("Falha na persistência do relatório: %s", e)
+            return
 
     # 3. Exibição do Relatório Consolidado B2B com Valuation
     print("\n" + "=" * 125)

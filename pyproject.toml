@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alpha-agent"
+version = "0.1.0"
+description = "Plataforma de análise fundamentalista e valuation para ativos da B3."
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.0",
+    "python-dotenv>=1.0",
+    "yfinance>=0.2",
+    "google-genai>=1.0",
+    "SQLAlchemy>=2.0",
+    "psycopg[binary]>=3.2",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
