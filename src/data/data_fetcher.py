@@ -8,13 +8,13 @@ import yfinance as yf
 logger = logging.getLogger(__name__)
 RETRY_DELAYS_SECONDS = (0.5, 1.0)
 
-def _to_percent(value: Any) -> Optional[float]:
-    """Converte a fração decimal usada pelo yfinance para percentual."""
+def _to_percent(value: Any, *, input_is_percent: bool = False) -> Optional[float]:
+    """Normaliza um valor decimal ou percentual para a representação percentual."""
     if value is None:
         return None
     try:
         val = float(value)
-        return round(val * 100, 2)
+        return round(val if input_is_percent else val * 100, 2)
     except (TypeError, ValueError):
         return None
 
@@ -68,7 +68,9 @@ def fetch_multiple_tickers(tickers: List[str]) -> pd.DataFrame:
                 "Preco_Atual": info.get("currentPrice") or info.get("regularMarketPrice"),
                 "PL": info.get("trailingPE"),
                 "PVP": info.get("priceToBook"),
-                "Dividend_Yield_%": _to_percent(info.get("dividendYield")),
+                "Dividend_Yield_%": _to_percent(
+                    info.get("dividendYield"), input_is_percent=True
+                ),
                 "ROE_%": _to_percent(info.get("returnOnEquity")),
                 "Margem_Liquida_%": _to_percent(info.get("profitMargins")),
                 "Market_Cap": info.get("marketCap"),

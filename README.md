@@ -44,9 +44,10 @@ no arquivo `.env` e execute:
 python ai_agent.py
 ```
 
-Os percentuais recebidos do `yfinance` são tratados como frações decimais
-(por exemplo, `0.06` representa `6%`) e convertidos para a representação
-percentual exibida nos relatórios.
+ROE e margem líquida recebidos do `yfinance` são tratados como frações
+decimais (por exemplo, `0.06` representa `6%`). O campo `dividendYield` é
+tratado conforme o formato percentual retornado pela versão atual da fonte.
+Todos são normalizados para a representação percentual exibida nos relatórios.
 
 ## ⚠️ Limitações do MVP
 

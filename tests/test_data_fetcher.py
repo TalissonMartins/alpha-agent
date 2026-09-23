@@ -5,6 +5,7 @@ from src.data import data_fetcher
 
 def test_to_percent_uses_yfinance_decimal_contract():
     assert data_fetcher._to_percent(0.06) == 6.0
+    assert data_fetcher._to_percent(9.03, input_is_percent=True) == 9.03
     assert data_fetcher._to_percent(0) == 0.0
     assert data_fetcher._to_percent(None) is None
 
@@ -20,7 +21,7 @@ def test_fetch_multiple_tickers_exposes_partial_failures(monkeypatch):
                 "currentPrice": 10.0,
                 "trailingPE": 10.0,
                 "priceToBook": 2.0,
-                "dividendYield": 0.06,
+                "dividendYield": 6.0,
             }
 
     monkeypatch.setattr(data_fetcher.yf, "Ticker", FakeTicker)
@@ -30,6 +31,7 @@ def test_fetch_multiple_tickers_exposes_partial_failures(monkeypatch):
 
     assert isinstance(result, pd.DataFrame)
     assert result.loc[result["Ticker"] == "GOOD", "Status_Coleta"].iloc[0] == "ok"
+    assert result.loc[result["Ticker"] == "GOOD", "Dividend_Yield_%"].iloc[0] == 6.0
     failed = result.loc[result["Ticker"] == "BAD"].iloc[0]
     assert failed["Status_Coleta"] == "erro"
     assert failed["Erro_Coleta"] == "ticker unavailable"
