@@ -1,1 +1,1 @@
-"""Integrações de coleta de dados."""
+# Pacote de coleta B3

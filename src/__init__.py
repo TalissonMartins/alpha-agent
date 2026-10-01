@@ -1,1 +1,1 @@
-"""Pacote principal do AlphaAgent."""
+# Pacote AlphaAgent

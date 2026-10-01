@@ -1,64 +1,82 @@
 import logging
 
 from .data.data_fetcher import fetch_multiple_tickers
-from .config import get_database_url, should_persist_database
-from .db.database import create_schema, create_session_factory
-from .db.repository import save_valuation_dataframe
 from .finance.engine import calculate_valuation
+from .opportunities.evaluator import RuleEvaluator
+from .opportunities.schemas import OpportunityRuleSchema, ValuationModelEnum
 
-# Configuração de logs centralizada
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger("AlphaAgent-Main")
 
-def main() -> None:
-    logger.info("Iniciando o AlphaAgent - Orquestrador (Fase 2 - Motor Financeiro)")
+COLUNAS = [
+    "Ticker",
+    "Preco_Atual",
+    "PL",
+    "PVP",
+    "Dividend_Yield_%",
+    "Preco_Justo_Graham",
+    "Margem_Graham_%",
+    "Earnings_Yield_%",
+    "Preco_Justo_Gordon",
+    "Status_Regra",
+]
 
-    # Watchlist Institucional inicial (4 ativos)
+
+def _status_graham(row, evaluator: RuleEvaluator) -> str:
+    rule = OpportunityRuleSchema(
+        ticker=str(row.get("Ticker", "N/A")),
+        valuation_model=ValuationModelEnum.GRAHAM,
+        limiar_compra=0.20,
+    )
+    resultado = evaluator.evaluate(
+        rule,
+        current_price=row.get("Preco_Atual"),
+        fair_value=row.get("Preco_Justo_Graham"),
+    )
+    return resultado.status.value
+
+
+def main() -> None:
+    logger.info("Iniciando o AlphaAgent - Orquestrador (Fase 3.1)")
     watchlist_b3 = ["PETR4.SA", "VALE3.SA", "ITUB4.SA", "WEGE3.SA"]
 
-    # 1. Extração de dados
-    logger.info("Acionando o módulo de extração de dados...")
+    logger.info("Acionando o modulo de extracao de dados...")
     try:
         df_raw = fetch_multiple_tickers(watchlist_b3)
-    except Exception as e:
-        logger.error(f"Falha na coleta de dados: {e}")
+    except Exception as exc:
+        logger.error("Falha na coleta de dados: %s", exc)
         return
 
     if df_raw.empty:
-        logger.error("Nenhum dado retornado na extração.")
+        logger.error("Nenhum dado retornado na extracao.")
         return
 
-    # 2. Execução do Motor Financeiro (Valuation)
-    logger.info("Acionando o Motor Financeiro para cálculo de Valuation...")
+    logger.info("Acionando o Motor Financeiro...")
     try:
         df_final = calculate_valuation(df_raw)
-    except Exception as e:
-        logger.error(f"Falha no cálculo do motor financeiro: {e}")
+    except Exception as exc:
+        logger.error("Falha no calculo do motor financeiro: %s", exc)
         return
 
-    if should_persist_database():
-        try:
-            database_url = get_database_url()
-            create_schema(database_url)
-            session_factory = create_session_factory(database_url)
-            with session_factory() as session:
-                saved = save_valuation_dataframe(session, df_final)
-            logger.info("Persistidos %d snapshots no banco de dados.", saved)
-        except Exception as e:
-            logger.error("Falha na persistência do relatório: %s", e)
-            return
+    evaluator = RuleEvaluator()
+    df_final["Status_Regra"] = df_final.apply(
+        lambda row: _status_graham(row, evaluator), axis=1
+    )
 
-    # 3. Exibição do Relatório Consolidado B2B com Valuation
+    presentes = [coluna for coluna in COLUNAS if coluna in df_final.columns]
+    faltando = [coluna for coluna in COLUNAS if coluna not in df_final.columns]
+
     print("\n" + "=" * 125)
-    print("                 ALPHAAGENT - RELATÓRIO INSTITUCIONAL DE VALUATION (FASE 2)")
+    print("         ALPHAAGENT - RELATORIO DE VALUATION + STATUS (FASE 3.1)")
     print("=" * 125)
-    
-    print(df_final.to_string(index=False))
+    print(df_final[presentes].to_string(index=False))
     print("=" * 125)
+    if faltando:
+        logger.warning("Colunas ausentes no DataFrame: %s", faltando)
+
 
 if __name__ == "__main__":
     main()
-    

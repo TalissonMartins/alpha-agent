@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import yfinance as yf
@@ -8,103 +8,76 @@ import yfinance as yf
 logger = logging.getLogger(__name__)
 RETRY_DELAYS_SECONDS = (0.5, 1.0)
 
+
 def _to_percent(value: Any, *, input_is_percent: bool = False) -> Optional[float]:
-    """Normaliza um valor decimal ou percentual para a representação percentual."""
     if value is None:
         return None
     try:
         val = float(value)
-        return round(val if input_is_percent else val * 100, 2)
     except (TypeError, ValueError):
         return None
+    if input_is_percent or val > 1.5:
+        return round(val, 2)
+    return round(val * 100, 2)
 
-def fetch_multiple_tickers(tickers: List[str]) -> pd.DataFrame:
-    """
-    Coleta dados fundamentalistas em lote de tickers da B3
-    e consolida em um DataFrame Pandas.
-
-    Args:
-        tickers: Lista de tickers no formato Yahoo (ex: ['PETR4.SA', 'VALE3.SA'])
-
-    Returns:
-        DataFrame com os dados consolidados
-    """
-    data_list: List[Dict[str, Any]] = []
-    logger.info("Iniciando coleta para %d ativos: %s", len(tickers), tickers)
-
-    for symbol in tickers:
-        info = None
-        last_error: Optional[Exception] = None
-        for attempt in range(len(RETRY_DELAYS_SECONDS) + 1):
-            try:
-                info = yf.Ticker(symbol).info
-                break
-            except Exception as e:
-                last_error = e
-                if attempt < len(RETRY_DELAYS_SECONDS):
-                    delay = RETRY_DELAYS_SECONDS[attempt]
-                    logger.warning(
-                        "Falha temporária ao consultar %s; nova tentativa em %.1fs",
-                        symbol,
-                        delay,
-                    )
-                    time.sleep(delay)
-
-        if info is None:
-            error_message = str(last_error or "resposta vazia da fonte")
-            logger.error("Falha ao processar o ticker %s: %s", symbol, error_message)
-            data_list.append({
-                "Ticker": symbol.replace(".SA", ""),
-                "Status_Coleta": "erro",
-                "Erro_Coleta": error_message,
-            })
-            continue
-
+def fetch_single_ticker(symbol: str) -> Dict[str, Any]:
+    last_error: Optional[str] = None
+    for delay in (0.0,) + RETRY_DELAYS_SECONDS:
+        if delay:
+            time.sleep(delay)
         try:
-            ticker_data = {
+            info = yf.Ticker(symbol).info
+            current_price = info.get("currentPrice") or info.get("regularMarketPrice")
+            if not current_price:
+                return {
+                    "Ticker": symbol.replace(".SA", ""),
+                    "Nome": info.get("shortName") or info.get("longName", "N/A"),
+                    "Setor": info.get("sector", "N/A"),
+                    "Preco_Atual": None,
+                    "PL": info.get("trailingPE"),
+                    "PVP": info.get("priceToBook"),
+                    "Dividend_Yield_%": _to_percent(info.get("dividendYield")),
+                    "ROE_%": _to_percent(info.get("returnOnEquity")),
+                    "Market_Cap": info.get("marketCap"),
+                    "Status_Coleta": "erro",
+                    "Erro_Coleta": "Preco ausente",
+                }
+            return {
                 "Ticker": symbol.replace(".SA", ""),
-                "Nome": info.get("shortName") or info.get("longName") or "N/A",
+                "Nome": info.get("shortName") or info.get("longName", "N/A"),
                 "Setor": info.get("sector", "N/A"),
-                "Preco_Atual": info.get("currentPrice") or info.get("regularMarketPrice"),
+                "Preco_Atual": float(current_price),
                 "PL": info.get("trailingPE"),
                 "PVP": info.get("priceToBook"),
-                "Dividend_Yield_%": _to_percent(
-                    info.get("dividendYield"), input_is_percent=True
-                ),
+                "Dividend_Yield_%": _to_percent(info.get("dividendYield")),
                 "ROE_%": _to_percent(info.get("returnOnEquity")),
-                "Margem_Liquida_%": _to_percent(info.get("profitMargins")),
                 "Market_Cap": info.get("marketCap"),
-                "Fluxo_Caixa_Livre": info.get("freeCashflow"),
-                "Acoes_Em_Circulacao": info.get("sharesOutstanding"),
                 "Status_Coleta": "ok",
                 "Erro_Coleta": None,
             }
+        except Exception as exc:
+            last_error = str(exc)
+            logger.warning("Falha temporaria em %s: %s", symbol, last_error)
+    logger.error("Falha ao processar o ticker %s: %s", symbol, last_error)
+    return {
+        "Ticker": symbol.replace(".SA", ""),
+        "Nome": "N/A",
+        "Setor": "N/A",
+        "Preco_Atual": None,
+        "PL": None,
+        "PVP": None,
+        "Dividend_Yield_%": None,
+        "ROE_%": None,
+        "Market_Cap": None,
+        "Status_Coleta": "erro",
+        "Erro_Coleta": last_error,
+    }
 
-            data_list.append(ticker_data)
-            logger.info("Dados coletados com sucesso: %s", symbol)
-        except (AttributeError, TypeError, ValueError) as e:
-            logger.error("Dados inválidos para o ticker %s: %s", symbol, e)
-            data_list.append({
-                "Ticker": symbol.replace(".SA", ""),
-                "Status_Coleta": "erro",
-                "Erro_Coleta": str(e),
-            })
 
-    if not data_list:
+def fetch_multiple_tickers(tickers: List[str]) -> pd.DataFrame:
+    logger.info("Iniciando coleta para %d ativos: %s", len(tickers), tickers)
+    rows = [fetch_single_ticker(symbol) for symbol in tickers]
+    df = pd.DataFrame(rows)
+    if df.empty:
         logger.warning("Nenhum dado foi coletado.")
-        return pd.DataFrame()
-
-    df = pd.DataFrame(data_list)
     return df
-
-
-if __name__ == "__main__":
-    # Teste Fase 1.5
-    watchlist_b3 = ["PETR4.SA", "VALE3.SA", "ITUB4.SA", "WEGE3.SA"]
-
-    df_consolidado = fetch_multiple_tickers(watchlist_b3)
-
-    print("\n" + "=" * 60)
-    print("      TABELA CONSOLIDADA ALPHAAGENT - B3 (Fase 1.5)")
-    print("=" * 60)
-    print(df_consolidado.to_string(index=False))

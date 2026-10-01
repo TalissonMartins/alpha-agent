@@ -1,1 +1,1 @@
-"""Modelos e cálculos financeiros."""
+# Pacote do motor de valuation
