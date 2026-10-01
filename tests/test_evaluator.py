@@ -76,3 +76,13 @@ def test_incompleto_valor_justo_negativo(evaluator):
     )
     resultado = evaluator.evaluate(rule, current_price=20.0, fair_value=-1.0)
     assert resultado.status == StatusRegraEnum.INCOMPLETO
+
+
+def test_incompleto_quando_justo_ausente(evaluator):
+    rule = OpportunityRuleSchema(
+        ticker="PETR4.SA",
+        valuation_model=ValuationModelEnum.GORDON,
+        limiar_compra=0.20,
+    )
+    resultado = evaluator.evaluate(rule, current_price=20.0, fair_value=None)
+    assert resultado.status == StatusRegraEnum.INCOMPLETO
