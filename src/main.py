@@ -6,7 +6,9 @@ import pandas as pd
 
 from .data.data_fetcher import fetch_multiple_tickers
 from .finance.engine import calculate_valuation
+from .opportunities.alerts import extrair_alertas, filtrar_novos
 from .opportunities.evaluator import RuleEvaluator
+from .opportunities.html_report import gravar_html
 from .opportunities.schemas import OpportunityRuleSchema, ValuationModelEnum
 
 logging.basicConfig(
@@ -72,7 +74,7 @@ def classificar(df: pd.DataFrame, limiar: float, evaluator: RuleEvaluator) -> pd
 
 
 def main() -> None:
-    logger.info("Iniciando o AlphaAgent - Orquestrador (Fase 3.1)")
+    logger.info("Iniciando o AlphaAgent - Orquestrador (Fase 3.3)")
     watchlist = carregar_watchlist(ROOT / "config" / "watchlist.txt")
     limiar = carregar_limiar(ROOT / "config" / "regras.json")
     logger.info("Watchlist: %s | limiar: %.0f%%", watchlist, limiar * 100)
@@ -96,15 +98,30 @@ def main() -> None:
     presentes = [coluna for coluna in COLUNAS if coluna in df_final.columns]
     faltando = [coluna for coluna in COLUNAS if coluna not in df_final.columns]
     relatorio = ROOT / "relatorios" / "ultimo.csv"
+    html = ROOT / "relatorios" / "ultimo.html"
+    alertas_path = ROOT / "relatorios" / "alertas.csv"
+    anterior_path = ROOT / "relatorios" / "anterior.csv"
     relatorio.parent.mkdir(exist_ok=True)
+    anterior = pd.read_csv(anterior_path) if anterior_path.exists() else None
+    novos = filtrar_novos(df_final, anterior)
+    if alertas_path.exists() and not novos.empty:
+        pd.concat([pd.read_csv(alertas_path), novos], ignore_index=True).to_csv(
+            alertas_path, index=False
+        )
+    elif not alertas_path.exists():
+        novos.to_csv(alertas_path, index=False)
     df_final[presentes].to_csv(relatorio, index=False)
+    df_final[presentes].to_csv(anterior_path, index=False)
+    gravar_html(df_final[presentes], html)
 
     print("\n" + "=" * 140)
-    print("         ALPHAAGENT - RELATORIO DE VALUATION + STATUS (FASE 3.1)")
+    print("         ALPHAAGENT - RELATORIO DE VALUATION + STATUS (FASE 3.3)")
     print("=" * 140)
     print(df_final[presentes].to_string(index=False))
     print("=" * 140)
     logger.info("CSV gravado em %s", relatorio)
+    logger.info("HTML gravado em %s", html)
+    logger.info("Alertas novos: %d linha(s) em %s", len(novos), alertas_path)
     if faltando:
         logger.warning("Colunas ausentes no DataFrame: %s", faltando)
 
