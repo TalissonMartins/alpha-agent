@@ -1,0 +1,9 @@
+{
+  "usdbrl": 5.40,
+  "posicoes": [
+    {"classe": "RV_BR", "ticker": "PETR4", "nome": "Petrobras", "valor_brl": 10000},
+    {"classe": "RF_BR", "nome": "Tesouro IPCA+ 2029", "indexador": "IPCA", "taxa_aa": 6.2, "prazo_anos": 3, "valor_brl": 8000},
+    {"classe": "RV_USD", "ticker": "AAPL", "nome": "Apple", "valor_usd": 2000},
+    {"classe": "FII_BR", "ticker": "HGLG11", "nome": "CSHG Logistica", "valor_brl": 5000}
+  ]
+}
