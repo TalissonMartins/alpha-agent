@@ -10,6 +10,11 @@ from .opportunities.alerts import extrair_alertas, filtrar_novos
 from .opportunities.evaluator import RuleEvaluator
 from .opportunities.html_report import gravar_html
 from .opportunities.schemas import OpportunityRuleSchema, ValuationModelEnum
+from .portfolio.alocacao import carregar_carteira, resumo_alocacao
+from .portfolio.consolidado import gravar_carteira_html
+from .portfolio.exterior import adicionar_preco_brl, tickers_usd
+from .portfolio.fii import classificar_fii
+from .portfolio.renda_fixa import calcular_renda_fixa
 
 logging.basicConfig(
     level=logging.INFO,
@@ -74,7 +79,7 @@ def classificar(df: pd.DataFrame, limiar: float, evaluator: RuleEvaluator) -> pd
 
 
 def main() -> None:
-    logger.info("Iniciando o AlphaAgent - Orquestrador (Fase 3.3)")
+    logger.info("Iniciando o AlphaAgent - Orquestrador (Fase 3.8)")
     watchlist = carregar_watchlist(ROOT / "config" / "watchlist.txt")
     limiar = carregar_limiar(ROOT / "config" / "regras.json")
     logger.info("Watchlist: %s | limiar: %.0f%%", watchlist, limiar * 100)
@@ -115,7 +120,7 @@ def main() -> None:
     gravar_html(df_final[presentes], html)
 
     print("\n" + "=" * 140)
-    print("         ALPHAAGENT - RELATORIO DE VALUATION + STATUS (FASE 3.3)")
+    print("         ALPHAAGENT - RELATORIO DE VALUATION + STATUS (FASE 3.5)")
     print("=" * 140)
     print(df_final[presentes].to_string(index=False))
     print("=" * 140)
@@ -124,6 +129,76 @@ def main() -> None:
     logger.info("Alertas novos: %d linha(s) em %s", len(novos), alertas_path)
     if faltando:
         logger.warning("Colunas ausentes no DataFrame: %s", faltando)
+
+    carteira = carregar_carteira(ROOT / "config" / "carteira.json")
+    alocacao = resumo_alocacao(carteira)
+    alocacao_path = ROOT / "relatorios" / "alocacao.csv"
+    alocacao.to_csv(alocacao_path, index=False)
+    print("\n" + "=" * 80)
+    print("         ALPHAAGENT - ALOCACAO DA CARTEIRA")
+    print("         RV_USD calculada no bloco exterior.")
+    print("=" * 80)
+    print(alocacao.to_string(index=False))
+    print("=" * 80)
+    logger.info("Alocacao gravada em %s", alocacao_path)
+
+    referencias = json.loads((ROOT / "config" / "referencias_rf.json").read_text(encoding="utf-8"))
+    renda_fixa = calcular_renda_fixa(carteira, referencias)
+    rf_path = ROOT / "relatorios" / "renda_fixa.csv"
+    renda_fixa.to_csv(rf_path, index=False)
+    print("\n" + "=" * 110)
+    print("         ALPHAAGENT - RENDA FIXA (FASE 3.5)")
+    print("         Compara taxa contratada com a referencia. Nao e ordem.")
+    print("=" * 110)
+    print(renda_fixa.to_string(index=False))
+    print("=" * 110)
+    logger.info("Renda fixa gravada em %s", rf_path)
+
+    colunas_usd = ["Ticker", "Preco_Atual", "Preco_BRL", "Preco_Justo_Graham", "Status_Graham", "Status_Gordon"]
+    df_usd = pd.DataFrame(columns=colunas_usd)
+    tickers = tickers_usd(carteira)
+    if tickers:
+        try:
+            bruto = fetch_multiple_tickers(tickers)
+            if not bruto.empty:
+                avaliado = classificar(calculate_valuation(bruto), limiar, RuleEvaluator())
+                df_usd = adicionar_preco_brl(avaliado, float(carteira["usdbrl"]))
+        except Exception as exc:
+            logger.error("Falha no exterior: %s", exc)
+    presentes_usd = [coluna for coluna in colunas_usd if coluna in df_usd.columns]
+    usd_path = ROOT / "relatorios" / "exterior.csv"
+    df_usd[presentes_usd].to_csv(usd_path, index=False)
+    print("\n" + "=" * 110)
+    print("         ALPHAAGENT - EXTERIOR USD (FASE 3.6)")
+    print("         Mesma classificacao da acao. Preco_BRL usa usdbrl manual.")
+    print("=" * 110)
+    print(df_usd[presentes_usd].to_string(index=False))
+    print("=" * 110)
+    logger.info("Exterior gravado em %s", usd_path)
+
+    colunas_fii = ["Ticker", "Preco_Atual", "PVP", "Dividend_Yield_%", "Status_FII"]
+    df_fii = pd.DataFrame(columns=colunas_fii)
+    try:
+        lista_fii = carregar_watchlist(ROOT / "config" / "fiis.txt")
+        bruto_fii = fetch_multiple_tickers(lista_fii)
+        if not bruto_fii.empty:
+            df_fii = classificar_fii(bruto_fii)
+    except Exception as exc:
+        logger.error("Falha nos FIIs: %s", exc)
+    presentes_fii = [coluna for coluna in colunas_fii if coluna in df_fii.columns]
+    fii_path = ROOT / "relatorios" / "fiis.csv"
+    df_fii[presentes_fii].to_csv(fii_path, index=False)
+    print("\n" + "=" * 90)
+    print("         ALPHAAGENT - FUNDOS IMOBILIARIOS (FASE 3.8)")
+    print("         P/VP abaixo de 1 e desconto. Nao e ordem.")
+    print("=" * 90)
+    print(df_fii[presentes_fii].to_string(index=False))
+    print("=" * 90)
+    logger.info("FIIs gravados em %s", fii_path)
+
+    carteira_html = ROOT / "relatorios" / "carteira.html"
+    gravar_carteira_html(alocacao, renda_fixa, df_usd[presentes_usd], df_fii[presentes_fii], carteira_html)
+    logger.info("Carteira consolidada em %s", carteira_html)
 
 
 if __name__ == "__main__":
