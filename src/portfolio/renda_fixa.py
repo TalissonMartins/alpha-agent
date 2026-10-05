@@ -23,6 +23,9 @@ def calcular_renda_fixa(carteira: dict, referencias: dict) -> pd.DataFrame:
         "valor_brl",
         "valor_projetado_brl",
         "status_rf",
+        "titulo_referencia",
+        "vencimento_referencia",
+        "data_referencia",
     ]
     if not linhas:
         return pd.DataFrame(columns=colunas)
@@ -47,6 +50,9 @@ def _linha(posicao: dict, referencias: dict, limiar: float) -> dict[str, Any]:
             "valor_brl": valor,
             "valor_projetado_brl": None,
             "status_rf": "INCOMPLETO",
+            "titulo_referencia": referencias.get("titulo_referencia"),
+            "vencimento_referencia": referencias.get("vencimento_referencia"),
+            "data_referencia": referencias.get("data_referencia"),
         }
     spread = round(taxa - referencia, 4)
     if spread >= limiar:
@@ -65,6 +71,9 @@ def _linha(posicao: dict, referencias: dict, limiar: float) -> dict[str, Any]:
         "valor_brl": valor,
         "valor_projetado_brl": _projetar(indexador, valor, taxa, prazo, referencias),
         "status_rf": status,
+        "titulo_referencia": referencias.get("titulo_referencia"),
+        "vencimento_referencia": referencias.get("vencimento_referencia"),
+        "data_referencia": referencias.get("data_referencia"),
     }
 
 
