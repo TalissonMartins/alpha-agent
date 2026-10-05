@@ -14,6 +14,9 @@ from .portfolio.alocacao import carregar_carteira, resumo_alocacao
 from .portfolio.consolidado import gravar_carteira_html
 from .portfolio.exterior import adicionar_preco_brl, tickers_usd
 from .portfolio.fii import classificar_fii
+from .portfolio.historico import acumular, linhas_do_dia
+from .portfolio.mercado import atualizar_referencias, cotacao_usdbrl
+from .portfolio.mudancas import mudancas_de_status
 from .portfolio.renda_fixa import calcular_renda_fixa
 
 logging.basicConfig(
@@ -79,7 +82,7 @@ def classificar(df: pd.DataFrame, limiar: float, evaluator: RuleEvaluator) -> pd
 
 
 def main() -> None:
-    logger.info("Iniciando o AlphaAgent - Orquestrador (Fase 3.8)")
+    logger.info("Iniciando o AlphaAgent - Orquestrador (Fase 3.14)")
     watchlist = carregar_watchlist(ROOT / "config" / "watchlist.txt")
     limiar = carregar_limiar(ROOT / "config" / "regras.json")
     logger.info("Watchlist: %s | limiar: %.0f%%", watchlist, limiar * 100)
@@ -131,6 +134,9 @@ def main() -> None:
         logger.warning("Colunas ausentes no DataFrame: %s", faltando)
 
     carteira = carregar_carteira(ROOT / "config" / "carteira.json")
+    cambio, origem_cambio = cotacao_usdbrl(float(carteira["usdbrl"]))
+    carteira["usdbrl"] = cambio
+    logger.info("Cambio USD/BRL %.4f (%s)", cambio, origem_cambio)
     alocacao = resumo_alocacao(carteira)
     alocacao_path = ROOT / "relatorios" / "alocacao.csv"
     alocacao.to_csv(alocacao_path, index=False)
@@ -143,6 +149,14 @@ def main() -> None:
     logger.info("Alocacao gravada em %s", alocacao_path)
 
     referencias = json.loads((ROOT / "config" / "referencias_rf.json").read_text(encoding="utf-8"))
+    referencias, origem_rf = atualizar_referencias(referencias)
+    logger.info(
+        "Referencia RF via %s | CDI %.2f | IPCA 12m %.2f | IPCA+ mercado %.2f",
+        origem_rf,
+        float(referencias["cdi_aa"]),
+        float(referencias["ipca_aa"]),
+        float(referencias["ipca_mais_mercado"]),
+    )
     renda_fixa = calcular_renda_fixa(carteira, referencias)
     rf_path = ROOT / "relatorios" / "renda_fixa.csv"
     renda_fixa.to_csv(rf_path, index=False)
@@ -170,7 +184,7 @@ def main() -> None:
     df_usd[presentes_usd].to_csv(usd_path, index=False)
     print("\n" + "=" * 110)
     print("         ALPHAAGENT - EXTERIOR USD (FASE 3.6)")
-    print("         Mesma classificacao da acao. Preco_BRL usa usdbrl manual.")
+    print("         Mesma classificacao da acao. Preco_BRL usa cambio do dia.")
     print("=" * 110)
     print(df_usd[presentes_usd].to_string(index=False))
     print("=" * 110)
@@ -199,6 +213,23 @@ def main() -> None:
     carteira_html = ROOT / "relatorios" / "carteira.html"
     gravar_carteira_html(alocacao, renda_fixa, df_usd[presentes_usd], df_fii[presentes_fii], carteira_html)
     logger.info("Carteira consolidada em %s", carteira_html)
+
+    historico_path = ROOT / "relatorios" / "historico.csv"
+    anterior_hist = pd.read_csv(historico_path) if historico_path.exists() else None
+    novas = linhas_do_dia(df_final, df_fii, df_usd, renda_fixa)
+    historico = acumular(anterior_hist, novas)
+    historico.to_csv(historico_path, index=False)
+    logger.info("Historico diario: %d linha(s) em %s", len(historico), historico_path)
+    mudancas = mudancas_de_status(historico)
+    mudancas_path = ROOT / "relatorios" / "mudancas.csv"
+    mudancas.to_csv(mudancas_path, index=False)
+    print("\n" + "=" * 90)
+    print("         ALPHAAGENT - MUDANCA DE STATUS (FASE 3.12)")
+    print("         So aparece depois do segundo dia. Nao e ordem.")
+    print("=" * 90)
+    print(mudancas.to_string(index=False) if not mudancas.empty else "Nenhuma mudanca. Falta o dia anterior ou o status repetiu.")
+    print("=" * 90)
+    logger.info("Mudancas: %d linha(s) em %s", len(mudancas), mudancas_path)
 
 
 if __name__ == "__main__":
